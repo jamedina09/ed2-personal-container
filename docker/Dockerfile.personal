@@ -102,6 +102,20 @@ RUN apt-get update \
        libblas-dev \
        liblapack-dev \
        libgomp1 \
+       curl \
+       ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Bake in the EDTS "common" input bundle (chd/dgd chill-day/degree-day
+# climatology, read unconditionally by ed_params.f90's phenology_init at
+# startup for any non-prescribed-phenology run, regardless of PFTs used -
+# see README.md). This is generic ED2 input data, not BCI-specific, so it
+# belongs in the image rather than copied into every run directory.
+RUN mkdir -p /opt/ed2_common \
+    && curl -sL "https://github.com/EDmodel/EDTS_CIData/releases/download/common_v1.0.0/common.tar.gz" \
+       | tar -xz -C /opt/ed2_common --strip-components=1 --exclude='._*' \
+    && apt-get purge -y curl ca-certificates \
+    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /data
