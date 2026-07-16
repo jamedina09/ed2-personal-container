@@ -2,11 +2,10 @@
 # Personal ED2 image (podman-friendly, fully self-contained)
 #
 # This Dockerfile only reads entrypoint.sh from the local build context
-# (this docker/ directory); the ED2 source itself is not read locally -
-# it clones ED2_GIT_URL at ED2_GIT_REF itself, inside the build. That
-# means:
-#   - build from this docker/ directory (as the context) - no local
-#     checkout of the ED2 repo itself is needed;
+# (the repo root); the ED2 source itself is not read locally - it clones
+# ED2_GIT_URL at ED2_GIT_REF itself, inside the build. That means:
+#   - build with the repo root as context - no local checkout of the ED2
+#     repo itself is needed;
 #   - you get reproducible, versioned images: pin ED2_GIT_REF to a tag,
 #     branch, or exact commit SHA to build the image for that exact point
 #     in history, and tag the resulting image to match (see examples
@@ -18,23 +17,23 @@
 #     ed2 (ED2 segfaults early without this - see EDTS/run-test.sh)
 #   - keeps /data as a mount point for external ED2IN + driver data
 #
-# Build (context must be this docker/ directory, so entrypoint.sh is
-# available to COPY; run from the repo root):
+# Build (context must be the repo root, so entrypoint.sh is available to
+# COPY; run from the repo root):
 #
-#   podman build -t ed2:personal -f docker/Dockerfile.personal docker
+#   podman build -t ed2:personal -f docker/Dockerfile.personal .
 #
 # Build a specific version (tag, branch, or commit SHA) and tag the image
 # to match, so you can keep multiple versions around side by side:
 #
-#   podman build -t ed2:v1.0 --build-arg ED2_GIT_REF=v1.0 -f docker/Dockerfile.personal docker
+#   podman build -t ed2:v1.0 --build-arg ED2_GIT_REF=v1.0 -f docker/Dockerfile.personal .
 #   podman build -t ed2:$(git rev-parse --short HEAD) \
-#       --build-arg ED2_GIT_REF=$(git rev-parse HEAD) -f docker/Dockerfile.personal docker
+#       --build-arg ED2_GIT_REF=$(git rev-parse HEAD) -f docker/Dockerfile.personal .
 #
 # Build from a different fork/branch entirely without editing this file:
 #
 #   podman build -t ed2:experimental \
 #       --build-arg ED2_GIT_URL=https://github.com/<other>/ED2.git \
-#       --build-arg ED2_GIT_REF=some-branch -f docker/Dockerfile.personal docker
+#       --build-arg ED2_GIT_REF=some-branch -f docker/Dockerfile.personal .
 #
 # Run (mount a local run directory containing ED2IN + inputs at /data):
 #
@@ -81,6 +80,7 @@ RUN mkdir -p /ED2 \
     && cp -r /ED2-src/EDR      /ED2/EDR \
     && cp -r /ED2-src/RAPP     /ED2/RAPP \
     && cp -r /ED2-src/Ramspost /ED2/Ramspost \
+    && cp -r /ED2-src/R-utils  /ED2/R-utils \
     && rm -rf /ED2-src
 
 COPY entrypoint.sh /entrypoint.sh
