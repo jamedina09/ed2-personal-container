@@ -1,0 +1,113 @@
+# ----------------------------------------------------------------------
+# Personal ED2 image (podman-friendly, fully self-contained)
+#
+# This Dockerfile only reads entrypoint.sh from the local build context
+# (this docker/ directory); the ED2 source itself is not read locally -
+# it clones ED2_GIT_URL at ED2_GIT_REF itself, inside the build. That
+# means:
+#   - build from this docker/ directory (as the context) - no local
+#     checkout of the ED2 repo itself is needed;
+#   - you get reproducible, versioned images: pin ED2_GIT_REF to a tag,
+#     branch, or exact commit SHA to build the image for that exact point
+#     in history, and tag the resulting image to match (see examples
+#     below). Every image you build is traceable to one exact git ref.
+#
+# Differences from the repo's own Dockerfile.gnu (unmodified, repo root):
+#   - clones source from git instead of COPY-ing a local checkout
+#   - adds an entrypoint that sets `ulimit -s unlimited` before running
+#     ed2 (ED2 segfaults early without this - see EDTS/run-test.sh)
+#   - keeps /data as a mount point for external ED2IN + driver data
+#
+# Build (context must be this docker/ directory, so entrypoint.sh is
+# available to COPY; run from the repo root):
+#
+#   podman build -t ed2:personal -f docker/Dockerfile.personal docker
+#
+# Build a specific version (tag, branch, or commit SHA) and tag the image
+# to match, so you can keep multiple versions around side by side:
+#
+#   podman build -t ed2:v1.0 --build-arg ED2_GIT_REF=v1.0 -f docker/Dockerfile.personal docker
+#   podman build -t ed2:$(git rev-parse --short HEAD) \
+#       --build-arg ED2_GIT_REF=$(git rev-parse HEAD) -f docker/Dockerfile.personal docker
+#
+# Build from a different fork/branch entirely without editing this file:
+#
+#   podman build -t ed2:experimental \
+#       --build-arg ED2_GIT_URL=https://github.com/<other>/ED2.git \
+#       --build-arg ED2_GIT_REF=some-branch -f docker/Dockerfile.personal docker
+#
+# Run (mount a local run directory containing ED2IN + inputs at /data):
+#
+#   podman run --rm --ulimit stack=-1:-1 \
+#       -v /path/to/rundir:/data:Z \
+#       ed2:personal -f ED2IN
+#
+# (--ulimit stack=-1:-1 is set both here in ENTRYPOINT and can also be
+#  passed on `podman run` - belt and suspenders since some podman/runc
+#  versions do not always honor ulimit raised inside the container.)
+# ----------------------------------------------------------------------
+FROM ubuntu:22.04 AS build
+
+ARG ED2_KIND=E
+ARG ED2_GIT_URL=https://github.com/jamedina09/ED2.git
+ARG ED2_GIT_REF=master
+
+ENV FC_TYPE=GNU \
+    ED2_KIND=${ED2_KIND} \
+    TZ=America/Chicago \
+    DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential \
+       gfortran \
+       libhdf5-openmpi-dev \
+       libblas-dev \
+       liblapack-dev \
+       git \
+       ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone the exact ref requested. Try a fast shallow clone by branch/tag
+# name first; fall back to a full clone + checkout, which is needed when
+# ED2_GIT_REF is a raw commit SHA (shallow-by-name doesn't work for those).
+RUN git clone --branch "${ED2_GIT_REF}" --depth 1 "${ED2_GIT_URL}" /ED2-src \
+    || (git clone "${ED2_GIT_URL}" /ED2-src \
+        && cd /ED2-src && git checkout "${ED2_GIT_REF}")
+
+RUN mkdir -p /ED2 \
+    && cp -r /ED2-src/BRAMS    /ED2/BRAMS \
+    && cp -r /ED2-src/ED       /ED2/ED \
+    && cp -r /ED2-src/EDR      /ED2/EDR \
+    && cp -r /ED2-src/RAPP     /ED2/RAPP \
+    && cp -r /ED2-src/Ramspost /ED2/Ramspost \
+    && rm -rf /ED2-src
+
+COPY entrypoint.sh /entrypoint.sh
+
+WORKDIR /ED2/ED/build
+RUN ./install.sh -k ${ED2_KIND} -g -p docker.gnu
+RUN if [ -e ed_*-opt ]; then mv ed_*-opt ed2; else mv ed_*-dbg ed2; fi
+
+########################################################################
+
+# ----------------------------------------------------------------------
+# Minimal runtime image with just the ED2 model
+# ----------------------------------------------------------------------
+FROM ubuntu:22.04
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       libhdf5-openmpi-103 \
+       libblas-dev \
+       liblapack-dev \
+       libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /data
+COPY --from=build /ED2/ED/build/ed2 /usr/bin/ed2
+COPY --from=build /entrypoint.sh /usr/bin/entrypoint.sh
+RUN chmod +x /usr/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/bin/entrypoint.sh"]
+CMD ["-f", "ED2IN"]
