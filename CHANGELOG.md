@@ -93,6 +93,3 @@ pass `LOCAL_UID`/`LOCAL_GID` to `podman run`, so the first smoke-test attempt
 reproduced exactly the permission-denied bug class this fix exists to
 prevent (`Fortran runtime error: ... Permission denied` writing into the
 bind-mounted run directory) — see `ED2_RUNS`' own `CHANGELOG.md`.
-
-**Not yet done as of this entry:** pushed to GHCR. Only local image tags
-(`ed2:d971a620`, `ed2:latest`) exist so far; pushing is pending review.

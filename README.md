@@ -1,7 +1,7 @@
 # ed2-personal-container
 
 Builds a podman-friendly container image for the [ED2](https://github.com/jamedina09/ED2)
-ecosystem model. This repo only builds and publishes the image — running
+ecosystem model. At the moment, it uses my forked ED2, which is the same as what is in the ED2 master branch. You can create one using your own fork version. This repo only builds and publishes the image — running
 simulations happens in the sibling
 [ED2_RUNS](https://github.com/jamedina09/ED2_RUNS) repo, against your own
 local run directories.
@@ -91,6 +91,8 @@ podman images ed2
 
 ## 2. Verify the build before pushing
 
+Follow this step if you have BCI data in your local device.
+
 Confirm the tag exists and is roughly the expected size (~187 MB — if it's
 dramatically smaller, something likely failed silently mid-build):
 
@@ -176,45 +178,23 @@ podman tag ed2:d971a620 ghcr.io/<your-github-username>/ed2:latest
 podman push ghcr.io/<your-github-username>/ed2:latest
 ```
 
-### 3d. Make the package public
+## 4. Using the image
 
-New GHCR packages default to **private**, visible only to you. For anyone
-else (e.g. via `ED2_RUNS`) to `podman pull` it, make it public: go to
-`https://github.com/<your-github-username>?tab=packages`, click the `ed2`
-package, **Package settings** → **Change visibility** → **Public**.
+Downloading, extracting the image's baked-in `R-utils`/`ED2IN` assets, and
+running actual experiments against it are **not** this repo's job — that
+entire workflow lives in the sibling
+[ED2_RUNS](https://github.com/jamedina09/ED2_RUNS) repo.
 
-## 4. Download the image (on any other machine)
+See that repo's README:
 
-```sh
-podman pull ghcr.io/<your-github-username>/ed2:latest
-```
+- **Requirements and Installation** (pulling the image, one-time
+  `./setup.sh` to extract `R-utils`/`ED2IN` — no local build needed for this)
+- **Manual Workflow** / **Automated Workflow** (building a run directory,
+  and the full build→run→extract→plot→catalog pipeline)
 
-No need for this repo to be checked out — the entrypoint and everything else
-was already baked into the image layers when it was built.
-
-## 5. Run the container
-
-```sh
-podman run --rm --ulimit stack=-1:-1 \
-    -e LOCAL_UID=$(id -u) -e LOCAL_GID=$(id -g) \
-    -v /path/to/your/rundir:/data:Z \
-    ghcr.io/<your-github-username>/ed2:latest -f ED2IN
-```
-
-Always pass `LOCAL_UID`/`LOCAL_GID` — the entrypoint remaps the container's
-internal user to match, so output written into your run directory is owned
-by you. (`--ulimit stack=-1:-1` is set both here and inside the entrypoint —
-belt and suspenders, since some podman/runc versions don't always honor a
-`ulimit` raised from inside the container; ED2 segfaults early without a
-raised stack limit, see `entrypoint.sh`.)
-
-A **run directory** contains an `ED2IN` namelist plus whatever met/soil/
-vegetation input files it points at — paths inside `ED2IN` must be relative
-(they'll be seen at `/data` inside the container, not your host path). For
-actual day-to-day runs — building that run directory, driving a full
-build→run→extract→plot pipeline — use the sibling
-[ED2_RUNS](https://github.com/jamedina09/ED2_RUNS) repo instead of
-hand-rolling it here. This repo's job is building the image, not running it.
+This repo's job ends at step 3 above: build, verify, and publish an image.
+Everything downstream of "I have an image reference I want to use" belongs
+in `ED2_RUNS`.
 
 ## How the entrypoint works
 
