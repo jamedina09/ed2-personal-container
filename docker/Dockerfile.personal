@@ -21,6 +21,9 @@
 #   - adds an entrypoint that sets `ulimit -s unlimited` before running
 #     ed2 (ED2 segfaults early without this - see EDTS/run-test.sh)
 #   - keeps /data as a mount point for external ED2IN + driver data
+#   - bakes R-utils/ and the stock ED2IN template into /opt/ed2_assets, so
+#     consumer repos (e.g. ED2_RUNS) can extract them with `podman cp`
+#     against the pulled runtime image directly - no local build needed
 #
 # Build (context must be the repo root, so entrypoint.sh is available to
 # COPY; run from the repo root):
@@ -165,6 +168,21 @@ RUN mkdir -p /opt/ed2_common \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
+# --- Host-side extraction assets ---
+# R-utils/ (ED2 lab physics/allometry helper functions) and the stock
+# ED2IN namelist template are not read by ed2 itself at runtime - consumer
+# repos like ED2_RUNS need them on the HOST, extracted via `podman cp`, to
+# drive their own R scripts. These used to only exist in the build stage,
+# which meant extracting them required building the ~700MB build stage
+# locally (`--target build`) even though the runtime image was already
+# pulled from GHCR - the only reason a routine user ever needed this
+# repo's source checked out at all. Both are small (R-utils is plain text,
+# ED2IN is ~140KB) - baking them into the runtime image too means a single
+# `podman cp` against the already-pulled image replaces that whole detour.
+RUN mkdir -p /opt/ed2_assets
+COPY --from=build /ED2/R-utils /opt/ed2_assets/R-utils
+COPY --from=build /ED2/ED/run/ED2IN /opt/ed2_assets/ED2IN
+
 # --- Non-root user ---
 # Stays root at container start (entrypoint.sh needs root to remap
 # UID/GID); entrypoint.sh drops to this user via gosu before running ed2.
@@ -173,7 +191,7 @@ RUN mkdir -p /opt/ed2_common \
 # cross-machine permission bug.
 RUN groupadd -r ed2 && \
     useradd -ms /bin/bash -u 1000 -g ed2 ed2-user && \
-    chown -R ed2-user:ed2 /opt/ed2_common
+    chown -R ed2-user:ed2 /opt/ed2_common /opt/ed2_assets
 
 WORKDIR /data
 COPY --from=build /ED2/ED/build/ed2 /usr/bin/ed2

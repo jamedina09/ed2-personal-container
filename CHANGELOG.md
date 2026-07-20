@@ -8,6 +8,30 @@ itself — check with `podman inspect <image> | grep version`).
 The [ED2_RUNS](https://github.com/jamedina09/ED2_RUNS) repo distributes the
 built images and drives experiments against them.
 
+## d971a620 (assets update) — 2026-07-20
+
+Same ED2 ref/toolchain pins as the `2026-07-19` entry below (image content
+changed, version identifier did not — same pattern as the sibling
+ELM-FATES-PERSONAL-CONTAINER's git-identity fix).
+
+**What changed:** `R-utils/` and the stock `ED2IN` template are now baked
+into the runtime image at `/opt/ed2_assets` (previously they only existed in
+the build stage). Neither is read by `ed2` itself — they exist purely for
+consumer repos (`ED2_RUNS`) to `podman cp` onto the host. Before this,
+extracting them required separately cloning this repo and building its
+~700MB `--target build` stage locally, even though the runtime image was
+already pulled from GHCR — the only reason a routine `ED2_RUNS` user ever
+needed this repo checked out at all. Now a single `podman cp` against the
+already-pulled runtime image is enough. Image size: ~187 MB → ~231 MB.
+
+**Verification performed:** rebuilt (mostly cache-hit — only the new `COPY`
+steps re-ran), confirmed `/opt/ed2_assets/{R-utils,ED2IN}` present with
+correct `ed2-user:ed2` ownership, confirmed extracted contents are
+byte-identical (`md5sum`) to what the old build-stage extraction produced,
+then re-ran the full BCI smoke test end-to-end (167.4s → 156.8s, both within
+normal variance) to confirm the image still runs correctly — not just that
+the new files exist.
+
 ## d971a620 — 2026-07-19
 
 - `ED2_GIT_URL=https://github.com/jamedina09/ED2.git`

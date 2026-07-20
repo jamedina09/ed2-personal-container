@@ -15,8 +15,11 @@ it carries the full compiler toolchain and ED2 source tree. The **runtime
 stage** is a fresh, separate base image that only installs the shared
 libraries the already-compiled `ed2` binary needs to run, plus `gosu` and the
 generic EDTS phenology-init data bundle — everything else (compiler, dev
-headers, source) is left behind. Only the compiled binary crosses from one
-stage to the other, via `COPY --from=build`. Final image: ~187 MB.
+headers, source) is left behind. Only the compiled binary, plus two small
+host-side assets (`R-utils/` and the stock `ED2IN` template, at
+`/opt/ed2_assets` — not read by `ed2` itself, but needed on the host by
+consumer repos like `ED2_RUNS`), cross from the build stage into the runtime
+stage. Final image: ~231 MB.
 
 **Every version-sensitive value is a build `ARG`, not hardcoded** — the ED2
 git ref, and every pinned compiler/library version. The Dockerfile's own
