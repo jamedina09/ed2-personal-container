@@ -1,0 +1,39 @@
+# Build ARG pins for ED2 commit d971a62058f67c782557021f9a7397eb2492ef46
+# (short SHA d971a620 - used as the version identifier since this ref has
+# no tag; see below for why). This is the first pinned version, and the
+# Dockerfile's own ARG defaults match it, so this file exists purely as an
+# explicit, version-controlled record - matching the pattern in the sibling
+# ELM-FATES-PERSONAL-CONTAINER repo's versions/*.args files.
+#
+# Derivation:
+# 1. github.com/jamedina09/ED2 (ED2_GIT_URL, the fork this Dockerfile builds
+#    from) has no tags at all (`git ls-remote --tags` returns nothing).
+# 2. Upstream EDmodel/ED2's only real tag, v.2.2.0, is from 2020-02-08 -
+#    295 commits and 6+ years behind current master. Too stale to use as a
+#    default: it would very likely regress capabilities the sibling
+#    ED2_RUNS repo's BCI site setup already depends on.
+# 3. Confirmed via the GitHub compare API that jamedina09/ED2's master is
+#    currently IDENTICAL to EDmodel/ED2's master (0 ahead, 0 behind) - the
+#    fork carries no custom patches as of this pin, so pinning the fork's
+#    current commit is equivalent to pinning upstream at the same point.
+# 4. So: pin the exact commit SHA of "current master" as of this release,
+#    same reasoning as ELM-FATES-PERSONAL-CONTAINER's HLM_TAG when no clean
+#    tag existed there either - freeze a known-good point instead of
+#    continuing to float on a branch name, verified by an actual smoke test
+#    (see CHANGELOG.md), not assumed.
+#
+# Compiler/library versions: pinned to whatever Ubuntu 22.04's apt repo
+# resolved them to at the time of this pin (see Dockerfile comments for
+# which packages are deliberately left unpinned and why). Re-check these
+# with `apt-cache policy <package>` in a fresh ubuntu:22.04 container before
+# reusing this file's values for a different ED2_GIT_REF - they may have
+# moved since.
+ED2_KIND=E
+ED2_GIT_URL=https://github.com/jamedina09/ED2.git
+ED2_GIT_REF=d971a62058f67c782557021f9a7397eb2492ef46
+GFORTRAN_VERSION=4:11.2.0-1ubuntu1
+HDF5_DEV_VERSION=1.10.7+repack-4ubuntu2
+HDF5_RUNTIME_VERSION=1.10.7+repack-4ubuntu2
+BLAS_VERSION=3.10.0-2ubuntu1
+LAPACK_VERSION=3.10.0-2ubuntu1
+LIBGOMP_VERSION=12.3.0-1ubuntu1~22.04.3

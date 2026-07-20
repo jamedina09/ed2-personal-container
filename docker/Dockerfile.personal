@@ -10,9 +10,14 @@
 #     branch, or exact commit SHA to build the image for that exact point
 #     in history, and tag the resulting image to match (see examples
 #     below). Every image you build is traceable to one exact git ref.
+#   - every version-sensitive value (ED2 ref, compiler/library versions) is
+#     a build ARG, not hardcoded - see versions/*.args and build.sh for the
+#     same pattern used in the sibling ELM-FATES-PERSONAL-CONTAINER repo.
 #
 # Differences from the repo's own Dockerfile.gnu (unmodified, repo root):
 #   - clones source from git instead of COPY-ing a local checkout
+#   - runs as a non-root user (ed2-user), remapped to the host's UID/GID at
+#     container start by entrypoint.sh, instead of running as root
 #   - adds an entrypoint that sets `ulimit -s unlimited` before running
 #     ed2 (ED2 segfaults early without this - see EDTS/run-test.sh)
 #   - keeps /data as a mount point for external ED2IN + driver data
@@ -35,9 +40,12 @@
 #       --build-arg ED2_GIT_URL=https://github.com/<other>/ED2.git \
 #       --build-arg ED2_GIT_REF=some-branch -f docker/Dockerfile.personal .
 #
-# Run (mount a local run directory containing ED2IN + inputs at /data):
+# Run (mount a local run directory containing ED2IN + inputs at /data; the
+# entrypoint remaps ed2-user to your host UID/GID so output stays owned by
+# you, not some arbitrary container default - always pass these):
 #
 #   podman run --rm --ulimit stack=-1:-1 \
+#       -e LOCAL_UID=$(id -u) -e LOCAL_GID=$(id -g) \
 #       -v /path/to/rundir:/data:Z \
 #       ed2:personal -f ED2IN
 #
@@ -47,9 +55,38 @@
 # ----------------------------------------------------------------------
 FROM ubuntu:22.04 AS build
 
+# --- Version pins (build ARGs) ---
+# Defaults are the currently-verified-working combination - see
+# versions/*.args for the version this repo is currently pinned to and the
+# rationale behind it, and CHANGELOG.md for the full history.
+#
+# ED2_GIT_REF is a full commit SHA, not a tag: the fork this Dockerfile
+# builds from (ED2_GIT_URL) has no tags at all, and upstream EDmodel/ED2's
+# only real tag (v.2.2.0) is from 2020 - 295 commits and 6+ years behind
+# current master, too stale to use. Same situation the sibling ELM-FATES
+# image hit with its HLM_TAG - pin the exact commit known to work, verified
+# by a real smoke test, not a moving branch name.
 ARG ED2_KIND=E
 ARG ED2_GIT_URL=https://github.com/jamedina09/ED2.git
-ARG ED2_GIT_REF=master
+ARG ED2_GIT_REF=d971a62058f67c782557021f9a7397eb2492ef46
+
+# Compiler/library versions matter for reproducibility the same way they do
+# for the ELM-FATES image, but unlike that image (which compiles GCC/HDF5
+# from source), this one installs them from Ubuntu 22.04's apt repo - so an
+# unpinned rebuild months later can silently get a different HDF5/BLAS/LAPACK
+# build without anyone noticing. Pin the exact apt package versions instead
+# of leaving them to float; a pinned version eventually aging out of the
+# Ubuntu mirror fails the build loudly, which is what we want (visible
+# breakage beats invisible drift). ca-certificates and git are deliberately
+# NOT pinned - they're build tooling, not part of the compiled model, and
+# ca-certificates specifically should stay current so HTTPS fetches
+# (this build, and the runtime stage's EDTS data download) keep working.
+ARG GFORTRAN_VERSION=4:11.2.0-1ubuntu1
+ARG HDF5_DEV_VERSION=1.10.7+repack-4ubuntu2
+ARG HDF5_RUNTIME_VERSION=1.10.7+repack-4ubuntu2
+ARG BLAS_VERSION=3.10.0-2ubuntu1
+ARG LAPACK_VERSION=3.10.0-2ubuntu1
+ARG LIBGOMP_VERSION=12.3.0-1ubuntu1~22.04.3
 
 ENV FC_TYPE=GNU \
     ED2_KIND=${ED2_KIND} \
@@ -59,10 +96,10 @@ ENV FC_TYPE=GNU \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        build-essential \
-       gfortran \
-       libhdf5-openmpi-dev \
-       libblas-dev \
-       liblapack-dev \
+       gfortran=${GFORTRAN_VERSION} \
+       libhdf5-openmpi-dev=${HDF5_DEV_VERSION} \
+       libblas-dev=${BLAS_VERSION} \
+       liblapack-dev=${LAPACK_VERSION} \
        git \
        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -83,8 +120,6 @@ RUN mkdir -p /ED2 \
     && cp -r /ED2-src/R-utils  /ED2/R-utils \
     && rm -rf /ED2-src
 
-COPY entrypoint.sh /entrypoint.sh
-
 WORKDIR /ED2/ED/build
 RUN ./install.sh -k ${ED2_KIND} -g -p docker.gnu
 RUN if [ -e ed_*-opt ]; then mv ed_*-opt ed2; else mv ed_*-dbg ed2; fi
@@ -96,12 +131,24 @@ RUN if [ -e ed_*-opt ]; then mv ed_*-opt ed2; else mv ed_*-dbg ed2; fi
 # ----------------------------------------------------------------------
 FROM ubuntu:22.04
 
+ARG ED2_GIT_REF=d971a62058f67c782557021f9a7397eb2492ef46
+ARG HDF5_RUNTIME_VERSION=1.10.7+repack-4ubuntu2
+ARG BLAS_VERSION=3.10.0-2ubuntu1
+ARG LAPACK_VERSION=3.10.0-2ubuntu1
+ARG LIBGOMP_VERSION=12.3.0-1ubuntu1~22.04.3
+
+# Record the ED2 ref as image metadata (visible via `podman inspect`) - see
+# CHANGELOG.md for the full version history.
+LABEL org.opencontainers.image.version="${ED2_GIT_REF}"
+LABEL org.opencontainers.image.description="ED2 ecosystem model (ED2_GIT_REF=${ED2_GIT_REF})"
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       libhdf5-openmpi-103 \
-       libblas-dev \
-       liblapack-dev \
-       libgomp1 \
+       libhdf5-openmpi-103=${HDF5_RUNTIME_VERSION} \
+       libblas-dev=${BLAS_VERSION} \
+       liblapack-dev=${LAPACK_VERSION} \
+       libgomp1=${LIBGOMP_VERSION} \
+       gosu \
        curl \
        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -114,13 +161,23 @@ RUN apt-get update \
 RUN mkdir -p /opt/ed2_common \
     && curl -sL "https://github.com/EDmodel/EDTS_CIData/releases/download/common_v1.0.0/common.tar.gz" \
        | tar -xz -C /opt/ed2_common --strip-components=1 --exclude='._*' \
-    && apt-get purge -y curl ca-certificates \
+    && apt-get purge -y curl \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
+# --- Non-root user ---
+# Stays root at container start (entrypoint.sh needs root to remap
+# UID/GID); entrypoint.sh drops to this user via gosu before running ed2.
+# Same design as the sibling ELM-FATES-PERSONAL-CONTAINER image, applied
+# here from the start instead of retrofitting it after hitting the same
+# cross-machine permission bug.
+RUN groupadd -r ed2 && \
+    useradd -ms /bin/bash -u 1000 -g ed2 ed2-user && \
+    chown -R ed2-user:ed2 /opt/ed2_common
+
 WORKDIR /data
 COPY --from=build /ED2/ED/build/ed2 /usr/bin/ed2
-COPY --from=build /entrypoint.sh /usr/bin/entrypoint.sh
+COPY entrypoint.sh /usr/bin/entrypoint.sh
 RUN chmod +x /usr/bin/entrypoint.sh
 
 ENTRYPOINT ["/usr/bin/entrypoint.sh"]
