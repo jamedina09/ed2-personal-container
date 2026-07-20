@@ -8,6 +8,8 @@ local run directories.
 
 ## What this builds
 
+The dockerfile in this repo is a modified version of the ED2 provided dockerfile, but fitted to my personal preferences.
+
 A two-stage Ubuntu 22.04 image. The **build stage** compiles ED2 (via ED2's
 own `ED/build/install.sh`, not a generic Makefile) using `gfortran` and
 HDF5/BLAS/LAPACK dev packages from apt — this stage is large (~700 MB) since
